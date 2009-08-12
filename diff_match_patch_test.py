@@ -1,4 +1,4 @@
-#!/usr/bin/python2.2
+#!/usr/bin/python
 
 """Test harness for diff_match_patch.py
 
@@ -41,8 +41,8 @@ class DiffMatchPatchTest(unittest.TestCase):
     return (text1, text2)
 
 
-  # DIFF TEST FUNCTIONS
-
+class DiffTest(DiffMatchPatchTest):
+  """DIFF TEST FUNCTIONS"""
 
   def testDiffCommonPrefix(self):
     # Detect and remove any common prefix.
@@ -353,6 +353,14 @@ class DiffMatchPatchTest(unittest.TestCase):
     # Translation on deletion
     self.assertEquals(1, self.dmp.diff_xIndex([(self.dmp.DIFF_EQUAL, "a"), (self.dmp.DIFF_DELETE, "1234"), (self.dmp.DIFF_EQUAL, "xyz")], 3))
 
+  def testDiffLevenshtein(self):
+    # Levenshtein with trailing equality.
+    self.assertEquals(4, self.dmp.diff_levenshtein([(self.dmp.DIFF_DELETE, "abc"), (self.dmp.DIFF_INSERT, "1234"), (self.dmp.DIFF_EQUAL, "xyz")]))
+    # Levenshtein with leading equality.
+    self.assertEquals(4, self.dmp.diff_levenshtein([(self.dmp.DIFF_EQUAL, "xyz"), (self.dmp.DIFF_DELETE, "abc"), (self.dmp.DIFF_INSERT, "1234")]))
+    # Levenshtein with middle equality.
+    self.assertEquals(7, self.dmp.diff_levenshtein([(self.dmp.DIFF_DELETE, "abc"), (self.dmp.DIFF_EQUAL, "xyz"), (self.dmp.DIFF_INSERT, "1234")]))
+
   def testDiffPath(self):
     # Trace a path from back to front.
     # Single letters
@@ -426,8 +434,13 @@ class DiffMatchPatchTest(unittest.TestCase):
 
     # Timeout
     self.dmp.Diff_Timeout = 0.001  # 1ms
-    # This test may 'fail' on extremely fast computers.  If so, just increase the text lengths.
-    self.assertEquals(None, self.dmp.diff_map("`Twas brillig, and the slithy toves\nDid gyre and gimble in the wabe:\nAll mimsy were the borogoves,\nAnd the mome raths outgrabe.", "I am the very model of a modern major general,\nI've information vegetable, animal, and mineral,\nI know the kings of England, and I quote the fights historical,\nFrom Marathon to Waterloo, in order categorical."))
+    a = "`Twas brillig, and the slithy toves\nDid gyre and gimble in the wabe:\nAll mimsy were the borogoves,\nAnd the mome raths outgrabe.\n"
+    b = "I am the very model of a modern major general,\nI've information vegetable, animal, and mineral,\nI know the kings of England, and I quote the fights historical,\nFrom Marathon to Waterloo, in order categorical.\n"
+    # Increase the text lengths by 1024 times to ensure a timeout.
+    for x in xrange(10):
+      a = a + a
+      b = b + b
+    self.assertEquals(None, self.dmp.diff_map(a, b))
     self.dmp.Diff_Timeout = 0
 
     # Test the linemode speedup
@@ -442,8 +455,8 @@ class DiffMatchPatchTest(unittest.TestCase):
     self.assertEquals(texts_textmode, texts_linemode)
 
 
-  # MATCH TEST FUNCTIONS
-
+class MatchTest(DiffMatchPatchTest):
+  """MATCH TEST FUNCTIONS"""
 
   def testMatchAlphabet(self):
     # Initialise the bitmasks for Bitap
@@ -452,10 +465,8 @@ class DiffMatchPatchTest(unittest.TestCase):
     self.assertEquals({"a":37, "b":18, "c":8}, self.dmp.match_alphabet("abcaba"))
 
   def testMatchBitap(self):
-    self.dmp.Match_Balance = 0.5
+    self.dmp.Match_Distance = 100
     self.dmp.Match_Threshold = 0.5
-    self.dmp.Match_MinLength = 100
-    self.dmp.Match_MaxLength = 1000
     # Exact matches
     self.assertEquals(5, self.dmp.match_bitap("abcdefghijk", "fgh", 5))
 
@@ -466,16 +477,25 @@ class DiffMatchPatchTest(unittest.TestCase):
 
     self.assertEquals(2, self.dmp.match_bitap("abcdefghijk", "cdefxyhijk", 5))
 
-    self.assertEquals(None, self.dmp.match_bitap("abcdefghijk", "bxy", 1))
+    self.assertEquals(-1, self.dmp.match_bitap("abcdefghijk", "bxy", 1))
 
     # Overflow
     self.assertEquals(2, self.dmp.match_bitap("123456789xx0", "3456789x0", 2))
 
+    self.assertEquals(0, self.dmp.match_bitap("abcdef", "xxabc", 4))
+
+    self.assertEquals(3, self.dmp.match_bitap("abcdef", "defyy", 4))
+
+    self.assertEquals(0, self.dmp.match_bitap("abcdef", "xabcdefy", 0))
+
     # Threshold test
-    self.dmp.Match_Threshold = 0.75
+    self.dmp.Match_Threshold = 0.4
     self.assertEquals(4, self.dmp.match_bitap("abcdefghijk", "efxyhi", 1))
 
-    self.dmp.Match_Threshold = 0.1
+    self.dmp.Match_Threshold = 0.3
+    self.assertEquals(-1, self.dmp.match_bitap("abcdefghijk", "efxyhi", 1))
+
+    self.dmp.Match_Threshold = 0.0
     self.assertEquals(1, self.dmp.match_bitap("abcdefghijk", "bcdef", 1))
     self.dmp.Match_Threshold = 0.5
 
@@ -484,28 +504,30 @@ class DiffMatchPatchTest(unittest.TestCase):
 
     self.assertEquals(8, self.dmp.match_bitap("abcdexyzabcde", "abccde", 5))
 
-    # Balance test
-    self.dmp.Match_Balance = 0.6  # Strict location, loose accuracy.
-    self.assertEquals(None, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24))
+    # Distance test
+    self.dmp.Match_Distance = 10  # Strict location.
+    self.assertEquals(-1, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24))
 
-    self.assertEquals(0, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcxdxexfgh", 1))
+    self.assertEquals(0, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcdxxefg", 1))
 
-    self.dmp.Match_Balance = 0.4  # Strict accuracy, loose location.
+    self.dmp.Match_Distance = 1000  # Loose location.
     self.assertEquals(0, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcdefg", 24))
 
-    self.assertEquals(None, self.dmp.match_bitap("abcdefghijklmnopqrstuvwxyz", "abcxdxexfgh", 1))
-    self.dmp.Match_Balance = 0.5
 
   def testMatchMain(self):
     # Full match
     # Shortcut matches
     self.assertEquals(0, self.dmp.match_main("abcdef", "abcdef", 1000))
 
-    self.assertEquals(None, self.dmp.match_main("", "abcdef", 1))
+    self.assertEquals(-1, self.dmp.match_main("", "abcdef", 1))
 
     self.assertEquals(3, self.dmp.match_main("abcdef", "", 3))
 
     self.assertEquals(3, self.dmp.match_main("abcdef", "de", 3))
+
+    self.assertEquals(3, self.dmp.match_main("abcdef", "defy", 4))
+
+    self.assertEquals(0, self.dmp.match_main("abcdef", "abcdefy", 0))
 
     # Complex match
     self.dmp.Match_Threshold = 0.7
@@ -513,8 +535,8 @@ class DiffMatchPatchTest(unittest.TestCase):
     self.dmp.Match_Threshold = 0.5
 
 
-  # PATCH TEST FUNCTIONS
-
+class PatchTest(DiffMatchPatchTest):
+  """PATCH TEST FUNCTIONS"""
 
   def testPatchObj(self):
     # Patch Object
@@ -578,13 +600,19 @@ class DiffMatchPatchTest(unittest.TestCase):
   def testPatchMake(self):
     text1 = "The quick brown fox jumps over the lazy dog."
     text2 = "That quick brown fox jumped over a lazy dog."
-    diffs = self.dmp.diff_main(text1, text2, False)
-    expectedPatch = "@@ -1,11 +1,12 @@\n Th\n-e\n+at\n  quick b\n@@ -21,18 +22,17 @@\n jump\n-s\n+ed\n  over \n-the\n+a\n  laz\n"
+    # Text2+Text1 inputs.
+    expectedPatch = "@@ -1,8 +1,7 @@\n Th\n-at\n+e\n  qui\n@@ -21,17 +21,18 @@\n jump\n-ed\n+s\n  over \n-a\n+the\n  laz\n"
+    # The second patch must be "-21,17 +21,18", not "-22,17 +21,18" due to rolling context.
+    patches = self.dmp.patch_make(text2, text1)
+    self.assertEquals(expectedPatch, self.dmp.patch_toText(patches))
+
     # Text1+Text2 inputs.
+    expectedPatch = "@@ -1,11 +1,12 @@\n Th\n-e\n+at\n  quick b\n@@ -22,18 +22,17 @@\n jump\n-s\n+ed\n  over \n-the\n+a\n  laz\n"
     patches = self.dmp.patch_make(text1, text2)
     self.assertEquals(expectedPatch, self.dmp.patch_toText(patches))
 
     # Diff input.
+    diffs = self.dmp.diff_main(text1, text2, False)
     patches = self.dmp.patch_make(diffs)
     self.assertEquals(expectedPatch, self.dmp.patch_toText(patches))
 
@@ -603,6 +631,15 @@ class DiffMatchPatchTest(unittest.TestCase):
     # Character decoding.
     diffs = [(self.dmp.DIFF_DELETE, "`1234567890-=[]\\;',./"), (self.dmp.DIFF_INSERT, "~!@#$%^&*()_+{}|:\"<>?")]
     self.assertEquals(diffs, self.dmp.patch_fromText("@@ -1,21 +1,21 @@\n-%601234567890-=%5B%5D%5C;',./\n+~!@#$%25%5E&*()_+%7B%7D%7C:%22%3C%3E?\n")[0].diffs)
+
+    # Long string with repeats.
+    text1 = ""
+    for x in range(100):
+      text1 += "abcdef"
+    text2 = text1 + "123"
+    expectedPatch = "@@ -573,28 +573,31 @@\n cdefabcdefabcdefabcdefabcdef\n+123\n"
+    patches = self.dmp.patch_make(text1, text2)
+    self.assertEquals(expectedPatch, self.dmp.patch_toText(patches))
 
   def testPatchSplitMax(self):
     # Python's really got no need for this function, but other languages do.
